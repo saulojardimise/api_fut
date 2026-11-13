@@ -18,7 +18,7 @@ A API REST do próprio Supabase serve os dados.
 3. Em **Actions → Coleta de ajustes B3 → Run workflow** rode manualmente para testar.
    Para carga histórica, preencha `inicio` (ex.: `2026-01-02`).
 
-O agendamento roda de seg a sex às 22h (Brasília) e reprocessa os últimos 5 dias.
+O agendamento roda de seg a sex às 19h e 20h30 (Brasília) e reprocessa os últimos 5 dias.
 O upsert evita duplicatas e repõe dias que tenham falhado.
 
 ## 3. Consultando (API)

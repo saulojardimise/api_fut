@@ -2,8 +2,10 @@ name: Coleta de ajustes B3
 
 on:
   schedule:
-    # 22h de Brasília (01:00 UTC), de segunda a sexta (no UTC: terça a sábado)
-    - cron: "0 1 * * 2-6"
+    # 19h de Brasília (22:00 UTC): primeira tentativa, seg a sex
+    - cron: "0 22 * * 1-5"
+    # 20h30 de Brasília (23:30 UTC): confirma/atualiza com o boletim final
+    - cron: "30 23 * * 1-5"
   workflow_dispatch:
     inputs:
       inicio:
