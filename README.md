@@ -59,3 +59,8 @@ python -m pytest tests                              # testes
 - `mes_vencimento` é o 1º dia do mês do vencimento. O dia exato varia por contrato.
 - **DI1/DAP/DDI:** `ajuste` é o PU e `taxa_ajuste` é a taxa (% a.a.).
 - **Licença:** redistribuir publicamente/comercialmente dados da B3 pode exigir licença de market data.
+
+## Carga histórica
+**Actions → Carga histórica → Run workflow**, informe `inicio` (e opcionalmente `fim`).
+Com `somente_ativos` marcado, grava só o histórico dos contratos que estão em negociação hoje.
+A B3 disponibiliza os boletins a partir de 2018 aproximadamente.
