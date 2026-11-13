@@ -187,6 +187,8 @@ def gravar_supabase(linhas: list[dict], sessao: requests.Session) -> None:
         sys.exit("Defina SUPABASE_URL e SUPABASE_SECRET_KEY (ou use --dry-run).")
 
     headers = {
+        # User-Agent próprio: o Supabase recusa a chave secreta quando o UA parece um navegador
+        "User-Agent": "ajustes-b3-coletor/1.0 (python-requests)",
         "apikey": chave,
         "Content-Type": "application/json",
         "Prefer": "resolution=merge-duplicates,return=minimal",
