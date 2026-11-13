@@ -54,3 +54,10 @@ jobs:
           path: ajustes.csv
           if-no-files-found: ignore
           retention-days: 30
+
+      - name: Mostrar dados coletados
+        if: always()
+        run: |
+          if [ -f ajustes.csv ]; then
+            echo "::group::ajustes.csv"; cat ajustes.csv; echo "::endgroup::"
+          fi
