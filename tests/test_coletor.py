@@ -17,6 +17,7 @@ XML = b"""<?xml version="1.0" encoding="UTF-8"?>
      <FinInstrmAttrbts>
       <NtlFinVol Ccy="BRL">1500000.50</NtlFinVol>
       <OpnIntrst>12345</OpnIntrst>
+      <FrstPric>320.00</FrstPric><MinPric>319.5</MinPric><MaxPric>322.0</MaxPric><LastPric>321.6</LastPric><FinInstrmQty>850</FinInstrmQty>
       <AdjstdQt Ccy="BRL">321.45</AdjstdQt>
       <PrvsAdjstdQt Ccy="BRL">320.10</PrvsAdjstdQt>
       <VartnPts>1.35</VartnPts>
@@ -75,6 +76,9 @@ def test_parse_filtra_somente_futuros_com_ajuste():
     assert boi["ajuste_anterior"] == 320.10
     assert boi["contratos_abertos"] == 12345
     assert boi["taxa_ajuste"] is None
+    assert (boi["abertura"], boi["minima"], boi["maxima"], boi["fechamento"]) == (320.0, 319.5, 322.0, 321.6)
+    assert boi["contratos_negociados"] == 850
+    assert linhas[1]["abertura"] is None  # sem negócios no dia
 
     di = linhas[1]
     assert di["mes_vencimento"] == "2028-01-01"

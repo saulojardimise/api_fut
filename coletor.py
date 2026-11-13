@@ -56,6 +56,13 @@ CAMPOS_XML = {
     "VartnPts": "variacao_pts",
     "OpnIntrst": "contratos_abertos",
     "NtlFinVol": "volume_financeiro",
+    "FrstPric": "abertura",
+    "MinPric": "minima",
+    "MaxPric": "maxima",
+    "LastPric": "fechamento",
+    "TradAvrgPric": "preco_medio",
+    "FinInstrmQty": "contratos_negociados",
+    "RglrTxsQty": "negocios",
 }
 
 TAMANHO_LOTE = 1000

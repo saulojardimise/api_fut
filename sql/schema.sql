@@ -15,6 +15,13 @@ create table if not exists public.ajustes (
   variacao_pts          numeric,                -- ajuste - ajuste_anterior (pontos)
   contratos_abertos     bigint,
   volume_financeiro     numeric,
+  abertura              numeric,
+  minima                numeric,
+  maxima                numeric,
+  fechamento            numeric,                -- último negócio
+  preco_medio           numeric,
+  contratos_negociados  bigint,
+  negocios              bigint,
   atualizado_em         timestamptz not null default now(),
   primary key (data_pregao, ticker)
 );
