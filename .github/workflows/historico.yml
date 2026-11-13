@@ -18,10 +18,6 @@ on:
         type: boolean
         default: false
 
-concurrency:
-  group: carga-historica
-  cancel-in-progress: false
-
 jobs:
   carregar:
     runs-on: ubuntu-latest

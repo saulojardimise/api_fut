@@ -38,7 +38,9 @@ from lxml import etree
 log = logging.getLogger("coletor")
 
 URL_B3 = "https://www.b3.com.br/pesquisapregao/download?filelist={prefixo}{data}.zip"
-PREFIXOS = ("SPRD", "PR")  # simplificado primeiro (menor); completo como reserva
+# Boletim completo (PR, BVBG.086) primeiro: traz volume em contratos e financeiro.
+# O simplificado (SPRD) é a reserva.
+PREFIXOS = tuple(os.environ.get("BOLETINS", "PR,SPRD").split(","))
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
@@ -324,6 +326,7 @@ def parse_args():
     ap.add_argument("--csv", help="salva o resultado também em CSV")
     ap.add_argument("--verificar", action="store_true",
                     help="falha (exit 1) e avisa se o pregão de hoje não foi coletado corretamente")
+    ap.add_argument("--mostrar", help="imprime as linhas destes tickers (separados por vírgula)")
     ap.add_argument("-v", "--verbose", action="store_true")
     return ap.parse_args()
 
@@ -359,6 +362,8 @@ def executar(args) -> tuple[list[dict], date]:
                 log.info("%s: sem pregão ou arquivo ainda não publicado", dia)
                 continue
             linhas = parsear_xml(extrair_xml(conteudo))
+            # o boletim completo também traz negócios do after-market com a data D+1: descartar
+            linhas = [r for r in linhas if r["data_pregao"] == dia.isoformat()]
             if ativos is not None:
                 linhas = [r for r in linhas if r["ticker"] in ativos]
             log.info("%s: %d contratos futuros", dia, len(linhas))
@@ -381,6 +386,12 @@ def executar(args) -> tuple[list[dict], date]:
         print(f"... total: {len(todas)} linhas")
         if args.arquivo and not args.dry_run:
             gravar_supabase(todas, sessao)
+
+    if args.mostrar:
+        alvo = set(args.mostrar.split(","))
+        for r in todas:
+            if r["ticker"] in alvo:
+                print(r)
 
     if not todas:
         log.warning("Nenhum dado coletado.")
