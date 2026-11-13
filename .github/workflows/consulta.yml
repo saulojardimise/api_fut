@@ -1,0 +1,20 @@
+name: Consulta (exporta CSV no log)
+
+on:
+  workflow_dispatch:
+    inputs:
+      caminho:
+        description: 'Consulta PostgREST, ex.: ajustes?mercadoria=eq.BGI&order=data_pregao'
+        required: true
+
+jobs:
+  consultar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install requests
+      - env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CAMINHO: ${{ inputs.caminho }}
+        run: python scripts/consulta.py "$CAMINHO"
