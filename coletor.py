@@ -172,6 +172,8 @@ def parsear_xml(xml: bytes) -> list[dict]:
         }
         for col in CAMPOS_XML.values():
             linha[col] = _num(dados.get(col))
+        if linha["variacao_pts"] is None and linha["ajuste_anterior"] is not None:
+            linha["variacao_pts"] = round(linha["ajuste"] - linha["ajuste_anterior"], 6)
         linhas[(linha["data_pregao"], ticker)] = linha  # dedup
 
     return sorted(linhas.values(), key=lambda r: (r["mercadoria"], r["mes_vencimento"]))
