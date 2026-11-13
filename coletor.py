@@ -220,12 +220,26 @@ def dias_uteis(inicio: date, fim: date) -> list[date]:
     return dias
 
 
+def tickers_ativos(hoje: date, sessao: requests.Session) -> set[str]:
+    """Contratos presentes no pregão mais recente disponível (até 10 dias atrás)."""
+    for i in range(10):
+        dia = hoje - timedelta(days=i)
+        if dia.weekday() >= 5:
+            continue
+        conteudo = baixar_zip(dia, sessao)
+        if conteudo:
+            return {r["ticker"] for r in parsear_xml(extrair_xml(conteudo))}
+    sys.exit("Não encontrei nenhum pregão recente para definir os contratos ativos.")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--data", type=date.fromisoformat)
     ap.add_argument("--inicio", type=date.fromisoformat)
     ap.add_argument("--fim", type=date.fromisoformat)
     ap.add_argument("--dias", type=int, default=5, help="reprocessar os últimos N dias corridos (padrão 5)")
+    ap.add_argument("--somente-ativos", action="store_true",
+                    help="grava só os contratos que estão em negociação no último pregão")
     ap.add_argument("--arquivo", help="ZIP local em vez de baixar da B3")
     ap.add_argument("--dry-run", action="store_true", help="não grava; imprime amostra")
     ap.add_argument("--csv", help="salva o resultado também em CSV")
@@ -254,12 +268,19 @@ def main() -> None:
         else:
             dias = dias_uteis(hoje - timedelta(days=args.dias), hoje)
 
+        ativos: set[str] | None = None
+        if args.somente_ativos:
+            ativos = tickers_ativos(hoje, sessao)
+            log.info("Filtrando %d contratos ativos", len(ativos))
+
         for dia in dias:
             conteudo = baixar_zip(dia, sessao)
             if conteudo is None:
                 log.info("%s: sem pregão ou arquivo ainda não publicado", dia)
                 continue
             linhas = parsear_xml(extrair_xml(conteudo))
+            if ativos is not None:
+                linhas = [r for r in linhas if r["ticker"] in ativos]
             log.info("%s: %d contratos futuros", dia, len(linhas))
             if linhas and not args.dry_run:
                 gravar_supabase(linhas, sessao)

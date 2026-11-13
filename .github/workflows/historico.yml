@@ -1,0 +1,49 @@
+name: Carga histórica
+
+on:
+  workflow_dispatch:
+    inputs:
+      inicio:
+        description: "Data inicial (AAAA-MM-DD)"
+        required: true
+      fim:
+        description: "Data final (AAAA-MM-DD). Vazio = hoje"
+        required: false
+      somente_ativos:
+        description: "Gravar só os contratos negociados atualmente"
+        type: boolean
+        default: true
+      dry_run:
+        description: "Só testar (não grava no Supabase)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: carga-historica
+  cancel-in-progress: false
+
+jobs:
+  carregar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Carregar histórico
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          INICIO: ${{ inputs.inicio }}
+          FIM: ${{ inputs.fim }}
+          ATIVOS: ${{ inputs.somente_ativos }}
+          DRY: ${{ inputs.dry_run }}
+        run: |
+          ARGS=(--inicio "$INICIO")
+          [ -n "$FIM" ] && ARGS+=(--fim "$FIM")
+          [ "$ATIVOS" = "true" ] && ARGS+=(--somente-ativos)
+          [ "$DRY" = "true" ] && ARGS+=(--dry-run)
+          python coletor.py "${ARGS[@]}"
