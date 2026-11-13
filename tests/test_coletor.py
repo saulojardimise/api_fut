@@ -80,3 +80,27 @@ def test_parse_filtra_somente_futuros_com_ajuste():
     assert di["mes_vencimento"] == "2028-01-01"
     assert di["taxa_ajuste"] == 13.215
     assert di["taxa_ajuste_anterior"] == 13.230
+
+
+def test_calendario_b3():
+    from datetime import date
+    assert coletor.eh_dia_de_pregao(date(2026, 11, 12))
+    assert not coletor.eh_dia_de_pregao(date(2026, 11, 20))   # Consciência Negra
+    assert not coletor.eh_dia_de_pregao(date(2026, 12, 24))   # véspera de Natal
+    assert not coletor.eh_dia_de_pregao(date(2026, 11, 14))   # sábado
+
+
+def test_verificar_detecta_problemas():
+    from datetime import date
+    dia = date(2026, 11, 12)
+    assert coletor.verificar([], dia) == ["Nenhum ajuste coletado para o pregão de 12/11/2026"]
+    assert coletor.verificar([], date(2026, 11, 20)) == []  # feriado: sem alarme
+
+    ok = [{"data_pregao": "2026-11-12", "ticker": f"{m}X{i}", "mercadoria": m, "ajuste": 10.0}
+          for i in range(70) for m in coletor.MERCADORIAS_OBRIGATORIAS]
+    assert coletor.verificar(ok, dia) == []
+
+    ruim = [r for r in ok if r["mercadoria"] != "BGI"][:100]
+    problemas = coletor.verificar(ruim, dia)
+    assert any("Só 100" in p for p in problemas)
+    assert any("BGI" in p for p in problemas)

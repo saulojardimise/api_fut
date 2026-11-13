@@ -64,3 +64,13 @@ python -m pytest tests                              # testes
 **Actions → Carga histórica → Run workflow**, informe `inicio` (e opcionalmente `fim`).
 Com `somente_ativos` marcado, grava só o histórico dos contratos que estão em negociação hoje.
 A B3 disponibiliza os boletins a partir de 2018 aproximadamente.
+
+## Monitoramento
+- **Checagem diária (20h30):** o coletor confere se o pregão do dia foi gravado, se há ≥300 contratos,
+  se BGI, CCM, DI1, DOL e IND estão presentes e se os ajustes são válidos. Feriados da B3 são ignorados.
+  Se algo falhar, a execução fica vermelha no Actions e o GitHub manda e-mail.
+- **Tabela `coletas` e view `saude`:** histórico de cada execução (rode `sql/monitoramento.sql`).
+  Consulta rápida: `.../rest/v1/saude?apikey=SUA_PUBLISHABLE_KEY`
+- **Healthchecks.io (opcional, recomendado):** crie um check e salve a URL de ping no secret
+  `HEALTHCHECK_URL`. Ele avisa se a checagem falhar **ou se o GitHub nem rodar**.
+- **Agendamento ativo:** cada execução agendada reativa o workflow, evitando a desativação após 60 dias.

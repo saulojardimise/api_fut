@@ -220,6 +220,74 @@ def dias_uteis(inicio: date, fim: date) -> list[date]:
     return dias
 
 
+# ----------------------------------------------------------------------------
+# Monitoramento
+# ----------------------------------------------------------------------------
+MERCADORIAS_OBRIGATORIAS = ("BGI", "CCM", "DI1", "DOL", "IND")
+MINIMO_CONTRATOS = 300
+
+
+def eh_dia_de_pregao(dia: date) -> bool:
+    """Dia útil da B3 (fins de semana, feriados da bolsa, 24/12 e 31/12 fechados)."""
+    import holidays
+
+    if dia.weekday() >= 5 or (dia.month, dia.day) in ((12, 24), (12, 31)):
+        return False
+    return dia not in holidays.financial_holidays("BVMF", years=dia.year)
+
+
+def verificar(linhas: list[dict], dia: date) -> list[str]:
+    """Checagens de qualidade para o pregão `dia`. Retorna a lista de problemas."""
+    if not eh_dia_de_pregao(dia):
+        log.info("%s não é dia de pregão: nada a verificar", dia)
+        return []
+    do_dia = [r for r in linhas if r["data_pregao"] == dia.isoformat()]
+    if not do_dia:
+        return [f"Nenhum ajuste coletado para o pregão de {dia:%d/%m/%Y}"]
+    problemas = []
+    if len(do_dia) < MINIMO_CONTRATOS:
+        problemas.append(f"Só {len(do_dia)} contratos em {dia} (esperado >= {MINIMO_CONTRATOS})")
+    presentes = {r["mercadoria"] for r in do_dia}
+    faltando = [m for m in MERCADORIAS_OBRIGATORIAS if m not in presentes]
+    if faltando:
+        problemas.append(f"Mercadorias ausentes em {dia}: {', '.join(faltando)}")
+    sem_ajuste = [r["ticker"] for r in do_dia if not r["ajuste"] or r["ajuste"] <= 0]
+    if sem_ajuste:
+        problemas.append(f"{len(sem_ajuste)} contratos com ajuste inválido (ex.: {sem_ajuste[:5]})")
+    return problemas
+
+
+def registrar_coleta(status: str, linhas: int, ultimo_pregao: str | None, mensagem: str) -> None:
+    """Grava uma linha na tabela `coletas` (melhor esforço: nunca derruba a coleta)."""
+    url_base = os.environ.get("SUPABASE_URL", "").rstrip("/")
+    chave = os.environ.get("SUPABASE_SECRET_KEY") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+    if not url_base or not chave:
+        return
+    headers = {"User-Agent": "ajustes-b3-coletor/1.0", "apikey": chave,
+               "Content-Type": "application/json", "Prefer": "return=minimal"}
+    if not chave.startswith("sb_"):
+        headers["Authorization"] = f"Bearer {chave}"
+    corpo = {"status": status, "linhas": linhas, "ultimo_pregao": ultimo_pregao,
+             "mensagem": mensagem[:2000], "execucao": os.environ.get("GITHUB_RUN_ID")}
+    try:
+        r = requests.post(f"{url_base}/rest/v1/coletas", json=corpo, headers=headers, timeout=30)
+        if r.status_code >= 300:
+            log.warning("Não registrei a coleta (HTTP %s): %s", r.status_code, r.text[:200])
+    except requests.RequestException as e:
+        log.warning("Não registrei a coleta: %s", e)
+
+
+def avisar_healthcheck(ok: bool, mensagem: str) -> None:
+    """Ping para healthchecks.io (ou similar), se HEALTHCHECK_URL estiver definido."""
+    url = os.environ.get("HEALTHCHECK_URL", "").rstrip("/")
+    if not url:
+        return
+    try:
+        requests.post(url if ok else f"{url}/fail", data=mensagem.encode()[:10000], timeout=15)
+    except requests.RequestException as e:
+        log.warning("Falha ao avisar healthcheck: %s", e)
+
+
 def tickers_ativos(hoje: date, sessao: requests.Session) -> set[str]:
     """Contratos presentes no pregão mais recente disponível (até 10 dias atrás)."""
     for i in range(10):
@@ -232,7 +300,7 @@ def tickers_ativos(hoje: date, sessao: requests.Session) -> set[str]:
     sys.exit("Não encontrei nenhum pregão recente para definir os contratos ativos.")
 
 
-def main() -> None:
+def parse_args():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--data", type=date.fromisoformat)
     ap.add_argument("--inicio", type=date.fromisoformat)
@@ -243,15 +311,17 @@ def main() -> None:
     ap.add_argument("--arquivo", help="ZIP local em vez de baixar da B3")
     ap.add_argument("--dry-run", action="store_true", help="não grava; imprime amostra")
     ap.add_argument("--csv", help="salva o resultado também em CSV")
+    ap.add_argument("--verificar", action="store_true",
+                    help="falha (exit 1) e avisa se o pregão de hoje não foi coletado corretamente")
     ap.add_argument("-v", "--verbose", action="store_true")
-    args = ap.parse_args()
+    return ap.parse_args()
 
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
-                        format="%(asctime)s %(levelname)s %(message)s")
 
+def executar(args) -> tuple[list[dict], date]:
     sessao = requests.Session()
     sessao.headers["User-Agent"] = USER_AGENT
     todas: list[dict] = []
+    hoje = datetime.now(ZoneInfo("America/Sao_Paulo")).date()
 
     if args.arquivo:
         with open(args.arquivo, "rb") as f:
@@ -260,7 +330,6 @@ def main() -> None:
             sys.exit("Nenhum XML dentro do arquivo.")
         todas = parsear_xml(xml)
     else:
-        hoje = datetime.now(ZoneInfo("America/Sao_Paulo")).date()
         if args.data:
             dias = [args.data]
         elif args.inicio:
@@ -304,6 +373,43 @@ def main() -> None:
 
     if not todas:
         log.warning("Nenhum dado coletado.")
+    return todas, hoje
+
+
+def main() -> None:
+    args = parse_args()
+    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
+                        format="%(asctime)s %(levelname)s %(message)s")
+    gravar = not args.dry_run
+    try:
+        todas, hoje = executar(args)
+    except BaseException as e:  # inclui sys.exit de erros do Supabase
+        if isinstance(e, KeyboardInterrupt):
+            raise
+        msg = f"Coleta falhou: {e}"
+        log.error(msg)
+        if gravar:
+            registrar_coleta("erro", 0, None, msg)
+        if args.verificar:
+            avisar_healthcheck(False, msg)
+        sys.exit(1)
+
+    ultimo = max((r["data_pregao"] for r in todas), default=None)
+    problemas = verificar(todas, hoje) if args.verificar else []
+    if problemas:
+        msg = "; ".join(problemas)
+        log.error("Verificação falhou: %s", msg)
+        if gravar:
+            registrar_coleta("alerta", len(todas), ultimo, msg)
+        avisar_healthcheck(False, msg)
+        sys.exit(1)
+
+    msg = f"{len(todas)} linhas; último pregão {ultimo}"
+    if gravar:
+        registrar_coleta("ok", len(todas), ultimo, msg)
+    if args.verificar:
+        avisar_healthcheck(True, msg)
+    log.info("OK: %s", msg)
 
 
 if __name__ == "__main__":
