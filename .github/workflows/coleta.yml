@@ -38,10 +38,19 @@ jobs:
         run: |
           if [ -n "$INICIO" ]; then
             if [ -n "$FIM" ]; then
-              python coletor.py --inicio "$INICIO" --fim "$FIM"
+              python coletor.py --inicio "$INICIO" --fim "$FIM" --csv ajustes.csv
             else
-              python coletor.py --inicio "$INICIO"
+              python coletor.py --inicio "$INICIO" --csv ajustes.csv
             fi
           else
-            python coletor.py --dias 5
+            python coletor.py --dias 5 --csv ajustes.csv
           fi
+
+      - name: Guardar CSV da execução (backup por 30 dias)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ajustes-${{ github.run_id }}
+          path: ajustes.csv
+          if-no-files-found: ignore
+          retention-days: 30
