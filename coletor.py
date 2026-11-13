@@ -233,6 +233,10 @@ def eh_dia_de_pregao(dia: date) -> bool:
 
     if dia.weekday() >= 5 or (dia.month, dia.day) in ((12, 24), (12, 31)):
         return False
+    # Se 31/12 cai no fim de semana, a B3 fecha no último dia útil do ano
+    if dia.month == 12 and dia.day >= 29 and date(dia.year, 12, 31).weekday() >= 5:
+        if all((dia + timedelta(days=k)).weekday() >= 5 for k in range(1, 31 - dia.day + 1)):
+            return False
     return dia not in holidays.financial_holidays("BVMF", years=dia.year)
 
 

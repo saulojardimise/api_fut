@@ -104,3 +104,10 @@ def test_verificar_detecta_problemas():
     problemas = coletor.verificar(ruim, dia)
     assert any("Só 100" in p for p in problemas)
     assert any("BGI" in p for p in problemas)
+
+
+def test_ultimo_dia_util_do_ano():
+    from datetime import date
+    assert not coletor.eh_dia_de_pregao(date(2022, 12, 30))   # 31/12/2022 foi sábado
+    assert not coletor.eh_dia_de_pregao(date(2023, 12, 29))   # 31/12/2023 foi domingo
+    assert coletor.eh_dia_de_pregao(date(2023, 12, 28))
