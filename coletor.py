@@ -321,6 +321,8 @@ def parse_args():
     ap.add_argument("--dias", type=int, default=5, help="reprocessar os últimos N dias corridos (padrão 5)")
     ap.add_argument("--somente-ativos", action="store_true",
                     help="grava só os contratos que estão em negociação no último pregão")
+    ap.add_argument("--mercadorias",
+                    help="grava só estas mercadorias (ex.: IND,WIN), inclusive vencimentos já vencidos")
     ap.add_argument("--arquivo", help="ZIP local em vez de baixar da B3")
     ap.add_argument("--dry-run", action="store_true", help="não grava; imprime amostra")
     ap.add_argument("--csv", help="salva o resultado também em CSV")
@@ -366,6 +368,9 @@ def executar(args) -> tuple[list[dict], date]:
             linhas = [r for r in linhas if r["data_pregao"] == dia.isoformat()]
             if ativos is not None:
                 linhas = [r for r in linhas if r["ticker"] in ativos]
+            if args.mercadorias:
+                raizes = set(args.mercadorias.upper().split(","))
+                linhas = [r for r in linhas if r["mercadoria"] in raizes]
             log.info("%s: %d contratos futuros", dia, len(linhas))
             if linhas and not args.dry_run:
                 gravar_supabase(linhas, sessao)

@@ -9,6 +9,9 @@ on:
       fim:
         description: "Data final (AAAA-MM-DD). Vazio = hoje"
         required: false
+      mercadorias:
+        description: "Só estas mercadorias, inclusive vencidas (ex.: IND,WIN). Vazio = todas"
+        required: false
       somente_ativos:
         description: "Gravar só os contratos negociados atualmente"
         type: boolean
@@ -37,9 +40,11 @@ jobs:
           FIM: ${{ inputs.fim }}
           ATIVOS: ${{ inputs.somente_ativos }}
           DRY: ${{ inputs.dry_run }}
+          MERCADORIAS: ${{ inputs.mercadorias }}
         run: |
           ARGS=(--inicio "$INICIO")
           [ -n "$FIM" ] && ARGS+=(--fim "$FIM")
           [ "$ATIVOS" = "true" ] && ARGS+=(--somente-ativos)
           [ "$DRY" = "true" ] && ARGS+=(--dry-run)
+          [ -n "$MERCADORIAS" ] && ARGS+=(--mercadorias "$MERCADORIAS")
           python coletor.py "${ARGS[@]}"
