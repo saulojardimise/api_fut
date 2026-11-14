@@ -127,18 +127,26 @@ select
 -- =========================================================
 
 -- serie_continua: em cada pregão, o vencimento "da vez" de cada mercadoria.
--- Regra: o vencimento mais negociado do dia, sem nunca voltar para um vencimento
--- anterior (evita idas e vindas na rolagem).
+-- Regra: o vencimento mais curto com volume relevante (>= 50% do mais negociado),
+-- sem nunca voltar para um vencimento anterior (evita idas e vindas na rolagem).
 drop view if exists public.serie_continua_ajustada;
 drop view if exists public.serie_continua;
 
 create view public.serie_continua
 with (security_invoker = true) as
-with mais_negociado as (
-  select distinct on (mercadoria, data_pregao) mercadoria, data_pregao, mes_vencimento
+with volumes as (
+  select mercadoria, data_pregao, mes_vencimento, contratos_negociados,
+         max(contratos_negociados) over (partition by mercadoria, data_pregao) as maior_volume
   from public.ajustes
   where contratos_negociados > 0
-  order by mercadoria, data_pregao, contratos_negociados desc, mes_vencimento
+),
+mais_negociado as (
+  -- o vencimento mais curto que tenha pelo menos metade do volume do mais negociado
+  -- (evita que um negócio isolado num vencimento longo "puxe" a série)
+  select distinct on (mercadoria, data_pregao) mercadoria, data_pregao, mes_vencimento
+  from volumes
+  where contratos_negociados >= 0.5 * maior_volume
+  order by mercadoria, data_pregao, mes_vencimento
 ),
 vez as (
   select mercadoria, data_pregao,
