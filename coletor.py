@@ -417,7 +417,12 @@ def main() -> None:
         sys.exit(1)
 
     ultimo = max((r["data_pregao"] for r in todas), default=None)
-    problemas = verificar(todas, hoje) if args.verificar else []
+    verificar_agora = args.verificar
+    agora = datetime.now(ZoneInfo("America/Sao_Paulo"))
+    if verificar_agora and agora.hour < 20 and not any(r["data_pregao"] == hoje.isoformat() for r in todas):
+        log.info("Antes das 20h e boletim de hoje ainda não saiu: verificação fica para a próxima execução")
+        verificar_agora = False
+    problemas = verificar(todas, hoje) if verificar_agora else []
     if problemas:
         msg = "; ".join(problemas)
         log.error("Verificação falhou: %s", msg)
@@ -429,7 +434,7 @@ def main() -> None:
     msg = f"{len(todas)} linhas; último pregão {ultimo}"
     if gravar:
         registrar_coleta("ok", len(todas), ultimo, msg)
-    if args.verificar:
+    if verificar_agora:
         avisar_healthcheck(True, msg)
     log.info("OK: %s", msg)
 
