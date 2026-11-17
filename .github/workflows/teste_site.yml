@@ -1,0 +1,27 @@
+name: Teste do site (acesso público)
+
+on:
+  workflow_dispatch:
+  push:
+    paths: ["docs/**"]
+
+jobs:
+  testar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Consultas que o site faz, com a chave publicável
+        env:
+          URL: https://ghahflkvlvctuzvvjixs.supabase.co/rest/v1
+          KEY: sb_publishable_1uG6LeT2Sv-VddJdGWS_fg_FZh--r3B
+        run: |
+          set -e
+          for q in "mercadorias?select=codigo&limit=1" \
+                   "ajustes_ultimo_pregao?select=ticker&limit=1" \
+                   "serie_continua_ajustada?mercadoria=eq.IND&select=data_pregao&order=data_pregao.desc&limit=1" \
+                   "serie_continua?mercadoria=eq.BGI&select=data_pregao&order=data_pregao.desc&limit=1" \
+                   "ajustes?ticker=eq.INDZ26&select=data_pregao&limit=1"; do
+            body=$(curl -sS -w '\n%{http_code}' "$URL/$q" -H "apikey: $KEY")
+            code=$(echo "$body" | tail -1); data=$(echo "$body" | head -n -1)
+            echo "$code $q -> $data"
+            [ "$code" = "200" ] && [ "$data" != "[]" ] || { echo "::error::falhou: $q"; exit 1; }
+          done

@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Futuros B3 · gráficos</title>
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141413" media="(prefers-color-scheme: dark)">
+<style>
+  :root {
+    --bg: #ffffff; --panel: #f6f5f1; --text: #141413; --muted: #6b6a65; --line: #e3e1d9;
+    --accent: #2a78d6; --up: #0f9d58; --down: #d23f3f; --radius: 10px;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #141413; --panel: #1f1f1d; --text: #f0efea; --muted: #a3a29b; --line: #33322f;
+            --accent: #4a90e2; --up: #26a96c; --down: #e05252; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-size: 15px; }
+  header { padding: 14px 16px 6px; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  h1 { font-size: 18px; font-weight: 600; margin: 0; }
+  #status { font-size: 12px; color: var(--muted); }
+  .controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; padding: 6px 16px; }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+  select, button { font: inherit; font-size: 15px; color: var(--text); background: var(--panel); border: 1px solid var(--line);
+                   border-radius: var(--radius); padding: 9px 10px; min-height: 42px; }
+  .seg { display: flex; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .seg button { flex: 1; border: 0; border-radius: 0; min-height: 40px; padding: 8px 4px; font-size: 14px; }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button.on { background: var(--accent); color: #fff; }
+  .toggles { display: flex; flex-wrap: wrap; gap: 14px; padding: 4px 16px 8px; font-size: 14px; }
+  .toggles label { flex-direction: row; align-items: center; gap: 6px; color: var(--text); font-size: 14px; }
+  #legend { padding: 4px 16px; font-size: 13px; color: var(--muted); min-height: 22px; font-variant-numeric: tabular-nums; }
+  #legend b { color: var(--text); font-weight: 600; }
+  #chart { width: 100%; height: 62vh; min-height: 340px; }
+  #nota { padding: 8px 16px 20px; font-size: 12px; color: var(--muted); line-height: 1.5; }
+  .erro { color: var(--down) !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Futuros B3</h1>
+  <span id="status">carregando…</span>
+</header>
+
+<div class="controls">
+  <label>Mercadoria
+    <select id="mercadoria"></select>
+  </label>
+  <label>Contrato
+    <select id="serie"></select>
+  </label>
+  <label>Período
+    <div class="seg" id="periodo">
+      <button data-v="3m">3M</button><button data-v="6m">6M</button><button data-v="1a" class="on">1A</button>
+      <button data-v="3a">3A</button><button data-v="tudo">Tudo</button>
+    </div>
+  </label>
+  <label>Candle
+    <div class="seg" id="tempo">
+      <button data-v="D" class="on">Diário</button><button data-v="S">Semanal</button><button data-v="M">Mensal</button>
+    </div>
+  </label>
+</div>
+
+<div class="toggles">
+  <label><input type="checkbox" id="optAjuste"> Linha do ajuste</label>
+  <label><input type="checkbox" id="optMM" checked> Médias 20 e 50</label>
+  <label><input type="checkbox" id="optVol" checked> Volume</label>
+</div>
+
+<div id="legend"></div>
+<div id="chart"></div>
+<div id="nota"></div>
+
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<script>
+// Chave publicável (somente leitura, protegida por RLS) — pode ficar no front-end.
+const SUPABASE_URL = "https://ghahflkvlvctuzvvjixs.supabase.co";
+const SUPABASE_KEY = "sb_publishable_1uG6LeT2Sv-VddJdGWS_fg_FZh--r3B";
+
+const MESES = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
+const $ = (id) => document.getElementById(id);
+const fmt = (v, d) => v == null ? "–" : Number(v).toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
+const fmtInt = (v) => v == null ? "–" : Number(v).toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+
+const estado = { periodo: "1a", tempo: "D", dados: [], casas: 2 };
+const cache = new Map();
+
+async function api(caminho) {
+  if (cache.has(caminho)) return cache.get(caminho);
+  const linhas = [];
+  const passo = 1000;
+  for (;;) {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${caminho}`, {
+      headers: { apikey: SUPABASE_KEY, Range: `${linhas.length}-${linhas.length + passo - 1}` },
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`);
+    const lote = await r.json();
+    linhas.push(...lote);
+    if (lote.length < passo) break;
+  }
+  cache.set(caminho, linhas);
+  return linhas;
+}
+
+function status(msg, erro) {
+  const el = $("status");
+  el.textContent = msg;
+  el.classList.toggle("erro", !!erro);
+}
+
+// ---------- gráfico ----------
+const escuro = matchMedia("(prefers-color-scheme: dark)").matches;
+const css = getComputedStyle(document.documentElement);
+const cor = (n) => css.getPropertyValue(n).trim();
+
+const chart = LightweightCharts.createChart($("chart"), {
+  autoSize: true,
+  layout: { background: { color: cor("--bg") }, textColor: cor("--muted"), fontSize: 12 },
+  grid: { vertLines: { visible: false }, horzLines: { color: cor("--line") } },
+  handleScale: { axisPressedMouseMove: true }, kineticScroll: { touch: true },
+  rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.08, bottom: 0.22 } },
+  timeScale: { borderVisible: false, rightOffset: 4 },
+  crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+  localization: {
+    locale: "pt-BR",
+    priceFormatter: (p) => fmt(p, estado.casas),
+    timeFormatter: (t) => `${String(t.day).padStart(2, "0")}/${MESES[t.month - 1]}/${t.year}`,
+  },
+});
+const sCandle = chart.addCandlestickSeries({
+  upColor: cor("--up"), downColor: cor("--down"), borderUpColor: cor("--up"), borderDownColor: cor("--down"),
+  wickUpColor: cor("--up"), wickDownColor: cor("--down"),
+});
+const sVol = chart.addHistogramSeries({ priceScaleId: "vol", priceFormat: { type: "volume" }, lastValueVisible: false, priceLineVisible: false });
+chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+const sAjuste = chart.addLineSeries({ color: cor("--accent"), lineWidth: 2, lineStyle: 2, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false });
+const sMM20 = chart.addLineSeries({ color: "#eda100", lineWidth: 1.5, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false });
+const sMM50 = chart.addLineSeries({ color: "#9085e9", lineWidth: 1.5, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false });
+
+// ---------- dados ----------
+function paraCandle(r) {
+  const temOHLC = r.abertura != null && r.fechamento != null;
+  const base = r.ajuste ?? r.fechamento;
+  return {
+    data: r.data_pregao,
+    o: temOHLC ? +r.abertura : +base,
+    h: temOHLC ? +r.maxima : +base,
+    l: temOHLC ? +r.minima : +base,
+    c: temOHLC ? +r.fechamento : +base,
+    ajuste: r.ajuste != null ? +r.ajuste : null,
+    vol: r.contratos_negociados != null ? +r.contratos_negociados : 0,
+    ticker: r.ticker,
+    rolagem: !!r.rolagem,
+    semNegocio: !temOHLC,
+  };
+}
+
+function agrupar(dados, tempo) {
+  if (tempo === "D") return dados;
+  const grupos = new Map();
+  for (const d of dados) {
+    const dt = new Date(d.data + "T12:00:00");
+    let chave;
+    if (tempo === "S") { const seg = new Date(dt); seg.setDate(dt.getDate() - ((dt.getDay() + 6) % 7)); chave = seg.toISOString().slice(0, 10); }
+    else chave = d.data.slice(0, 7) + "-01";
+    const g = grupos.get(chave);
+    if (!g) grupos.set(chave, { ...d, data: chave, semNegocio: d.semNegocio });
+    else {
+      g.h = Math.max(g.h, d.h); g.l = Math.min(g.l, d.l); g.c = d.c; g.ajuste = d.ajuste;
+      g.vol += d.vol; g.ticker = d.ticker; g.rolagem = g.rolagem || d.rolagem; g.semNegocio = g.semNegocio && d.semNegocio;
+    }
+  }
+  return [...grupos.values()];
+}
+
+function media(dados, n) {
+  const out = []; let soma = 0;
+  dados.forEach((d, i) => {
+    soma += d.c; if (i >= n) soma -= dados[i - n].c;
+    if (i >= n - 1) out.push({ time: d.data, value: soma / n });
+  });
+  return out;
+}
+
+function corteDoPeriodo(p) {
+  if (p === "tudo") return "0000";
+  const meses = { "3m": 3, "6m": 6, "1a": 12, "3a": 36 }[p];
+  const d = new Date(); d.setMonth(d.getMonth() - meses);
+  return d.toISOString().slice(0, 10);
+}
+
+function desenhar() {
+  const corte = corteDoPeriodo(estado.periodo);
+  const filtrados = estado.dados.filter((d) => d.data >= corte);
+  const dados = agrupar(filtrados, estado.tempo);
+  const amostra = dados.find((d) => d.c) || {};
+  estado.casas = Math.abs(amostra.c) >= 1000 ? 0 : Math.abs(amostra.c) >= 100 ? 2 : 3;
+  sCandle.applyOptions({ priceFormat: { type: "price", precision: estado.casas, minMove: 1 / 10 ** estado.casas } });
+
+  const cinza = cor("--muted");
+  sCandle.setData(dados.map((d) => ({
+    time: d.data, open: d.o, high: d.h, low: d.l, close: d.c,
+    ...(d.semNegocio ? { color: cinza, borderColor: cinza, wickColor: cinza } : {}),
+  })));
+  sCandle.setMarkers(estado.tempo === "D"
+    ? dados.filter((d) => d.rolagem).map((d) => ({ time: d.data, position: "aboveBar", color: cor("--accent"), shape: "arrowDown" }))
+    : []);
+  sVol.setData($("optVol").checked ? dados.map((d) => ({ time: d.data, value: d.vol, color: (d.c >= d.o ? cor("--up") : cor("--down")) + "55" })) : []);
+  sAjuste.setData($("optAjuste").checked ? dados.filter((d) => d.ajuste != null).map((d) => ({ time: d.data, value: d.ajuste })) : []);
+  const mm = $("optMM").checked;
+  sMM20.setData(mm ? media(dados, 20) : []);
+  sMM50.setData(mm ? media(dados, 50) : []);
+  chart.timeScale().fitContent();
+  estado.visiveis = dados;
+  legenda(dados[dados.length - 1]);
+}
+
+function legenda(d) {
+  if (!d) { $("legend").textContent = "Sem dados no período."; return; }
+  const p = estado.casas;
+  const [a, m, dd] = d.data.split("-");
+  const varPct = d.o ? ((d.c / d.o - 1) * 100) : 0;
+  $("legend").innerHTML =
+    `<b>${dd}/${m}/${a}</b> · ${d.ticker} · A <b>${fmt(d.o, p)}</b> Máx <b>${fmt(d.h, p)}</b> Mín <b>${fmt(d.l, p)}</b> F <b>${fmt(d.c, p)}</b>` +
+    ` · Ajuste <b>${fmt(d.ajuste, p)}</b> · Vol <b>${fmtInt(d.vol)}</b>` +
+    (d.semNegocio ? " · <i>sem negócios (só ajuste)</i>" : "") +
+    ` · <span style="color:${varPct >= 0 ? cor("--up") : cor("--down")}">${varPct >= 0 ? "+" : ""}${fmt(varPct, 2)}%</span>`;
+}
+
+chart.subscribeCrosshairMove((param) => {
+  if (!param.time || !estado.visiveis) return legenda(estado.visiveis?.[estado.visiveis.length - 1]);
+  const t = typeof param.time === "string" ? param.time
+    : `${param.time.year}-${String(param.time.month).padStart(2, "0")}-${String(param.time.day).padStart(2, "0")}`;
+  legenda(estado.visiveis.find((d) => d.data === t));
+});
+
+// ---------- seletores ----------
+let ativos = [];
+
+async function carregarMercadorias() {
+  const [ultimo, nomes] = await Promise.all([
+    api("ajustes_ultimo_pregao?select=mercadoria,ticker,mes_vencimento,contratos_negociados&order=mercadoria,mes_vencimento"),
+    api("mercadorias?select=codigo,nome"),
+  ]);
+  ativos = ultimo;
+  const nome = Object.fromEntries(nomes.map((n) => [n.codigo, n.nome]));
+  const vol = {};
+  for (const r of ultimo) vol[r.mercadoria] = (vol[r.mercadoria] || 0) + (+r.contratos_negociados || 0);
+  const lista = Object.keys(vol).sort((a, b) => (nome[b] ? 1 : 0) - (nome[a] ? 1 : 0) || vol[b] - vol[a]);
+  $("mercadoria").innerHTML = lista.map((m) => `<option value="${m}">${m}${nome[m] ? " · " + nome[m] : ""}</option>`).join("");
+  const url = new URLSearchParams(location.search);
+  const inicial = url.get("m") && vol[url.get("m")] != null ? url.get("m") : (vol.IND != null ? "IND" : lista[0]);
+  $("mercadoria").value = inicial;
+  preencherSeries(url.get("s"));
+}
+
+function preencherSeries(preferida) {
+  const m = $("mercadoria").value;
+  const contratos = ativos.filter((r) => r.mercadoria === m);
+  const opcoes = [
+    `<option value="__adj">Contínuo ajustado</option>`,
+    `<option value="__cont">Contínuo sem ajuste</option>`,
+    ...contratos.map((r) => {
+      const [a, mm] = r.mes_vencimento.split("-");
+      return `<option value="${r.ticker}">${r.ticker} · ${MESES[+mm - 1]}/${a.slice(2)}</option>`;
+    }),
+  ];
+  $("serie").innerHTML = opcoes.join("");
+  $("serie").value = preferida && [...$("serie").options].some((o) => o.value === preferida) ? preferida : "__adj";
+  carregarSerie();
+}
+
+async function carregarSerie() {
+  const m = $("mercadoria").value, s = $("serie").value;
+  const cols = "data_pregao,ticker,abertura,minima,maxima,fechamento,ajuste,contratos_negociados";
+  let caminho;
+  if (s === "__adj") caminho = `serie_continua_ajustada?mercadoria=eq.${m}&select=${cols},rolagem&order=data_pregao`;
+  else if (s === "__cont") caminho = `serie_continua?mercadoria=eq.${m}&select=${cols}&order=data_pregao`;
+  else caminho = `ajustes?ticker=eq.${s}&select=${cols}&order=data_pregao`;
+  history.replaceState(null, "", `?m=${m}&s=${s}`);
+  status("carregando…");
+  try {
+    let linhas = await api(caminho);
+    estado.dados = linhas.map(paraCandle);
+    status(`${estado.dados.length.toLocaleString("pt-BR")} pregões · até ${estado.dados.at(-1)?.data.split("-").reverse().join("/") ?? "–"}`);
+    notas(s);
+    if (!linhas.length && s.startsWith("__")) {
+      $("nota").textContent = `Ainda não há série contínua de ${m}: o histórico dos vencimentos já vencidos não foi carregado. Escolha um contrato específico.`;
+    }
+    desenhar();
+  } catch (e) {
+    status("erro ao carregar dados", true);
+    $("nota").textContent = e.message;
+  }
+}
+
+function notas(s) {
+  const txt = {
+    __adj: "Contínuo ajustado: emenda os vencimentos (o mais curto com volume relevante) e ajusta o histórico proporcionalmente em cada rolagem (setas azuis). Os preços antigos não são os negociados na época; as variações percentuais são preservadas.",
+    __cont: "Contínuo sem ajuste: preços reais de cada vencimento emendados; pode haver degraus nas rolagens.",
+  }[s] || "Contrato específico. Candles cinza = dias sem negócios (só o preço de ajuste).";
+  $("nota").textContent = txt + " Fonte: boletins da B3. Volume em contratos.";
+}
+
+// ---------- eventos ----------
+for (const grupo of ["periodo", "tempo"]) {
+  $(grupo).addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    [...$(grupo).children].forEach((x) => x.classList.toggle("on", x === b));
+    estado[grupo] = b.dataset.v;
+    desenhar();
+  });
+}
+$("mercadoria").addEventListener("change", () => preencherSeries());
+$("serie").addEventListener("change", carregarSerie);
+for (const id of ["optAjuste", "optMM", "optVol"]) $(id).addEventListener("change", desenhar);
+
+carregarMercadorias().catch((e) => { status("erro ao carregar", true); $("nota").textContent = e.message; });
+</script>
+</body>
+</html>
